@@ -1,4 +1,4 @@
-module ecs_socket
+module github.com/ecsavigne/ecs_socket
 
 go 1.24.3
 
