@@ -1,2 +1,4 @@
 # ecs_socket
-libreria para enviar data via websocket
+Library for send data way websocket
+
+
