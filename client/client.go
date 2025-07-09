@@ -61,3 +61,15 @@ func (c *Client) ReceiveMessage() {
 
 	c.lastMessageType, c.lastMessage = messageType, message
 }
+
+func (c *Client) Close() {
+	c.connect.Close()
+}
+
+func (c *Client) GetLastMessage() []byte {
+	return c.lastMessage
+}
+
+func (c *Client) GetLastMessageType() int {
+	return c.lastMessageType
+}

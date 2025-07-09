@@ -57,3 +57,15 @@ func (s *Server) ReceiveMessage() {
 	s.lastMessageType = messageType
 	s.lastMessage = message
 }
+
+func (s *Server) Close() {
+	s.connect.Close()
+}
+
+func (s *Server) GetLastMessage() []byte {
+	return s.lastMessage
+}
+
+func (s *Server) GetLastMessageType() int {
+	return s.lastMessageType
+}
