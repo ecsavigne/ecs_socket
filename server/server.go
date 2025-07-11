@@ -75,8 +75,12 @@ func (s *Server) Close() {
 }
 
 // Funct Listen
-func (s *Server) listen() {
+func (s *Server) Listen() {
 	for {
 		s.ReceiveMessage()
+		if s.Error != nil {
+			break
+		}
+
 	}
 }
