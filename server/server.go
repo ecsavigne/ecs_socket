@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/ecsavigne/ecs_socket/socket_type"
 	"github.com/gorilla/websocket"
 )
 
@@ -21,21 +22,24 @@ type Server struct {
 	Error           error
 }
 
-func NewServer() *Server {
-	return &Server{
+func NewServer(c socket_type.SConfig) *Server {
+	server := &Server{
 		lastMessageType: websocket.TextMessage,
 		lastMessage:     []byte{},
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
+
+	server.setHandler(c.W, c.R)
+
+	return server
 }
 
-func (s *Server) SetHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) setHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.Error = err
-		conn.Close()
 		return
 	}
 
@@ -58,14 +62,21 @@ func (s *Server) ReceiveMessage() {
 	s.lastMessage = message
 }
 
-func (s *Server) Close() {
-	s.connect.Close()
-}
-
 func (s *Server) GetLastMessage() []byte {
 	return s.lastMessage
 }
 
 func (s *Server) GetLastMessageType() int {
 	return s.lastMessageType
+}
+
+func (s *Server) Close() {
+	s.connect.Close()
+}
+
+// Funct Listen
+func (s *Server) listen() {
+	for {
+		s.ReceiveMessage()
+	}
 }

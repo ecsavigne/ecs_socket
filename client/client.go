@@ -4,13 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/ecsavigne/ecs_socket/socket_type"
 	"github.com/gorilla/websocket"
 )
-
-type Config struct {
-	Url string // url of connection where server is running "localhost:8080" tls = 0
-	Tls bool   // true si es una conexión segura (wss://) false si es una conexión insegura (ws://)
-}
 
 type Client struct {
 	connect         *websocket.Conn
@@ -21,7 +17,7 @@ type Client struct {
 
 // NewClient returns a new client if there is no error creating of client if there is an error it returns one
 // with a nil connection and the error en the Error field
-func NewClient(c Config) *Client {
+func NewClient(c socket_type.CConfig) *Client {
 	if c.Url == "" {
 		return &Client{
 			Error: fmt.Errorf("Empty Url"),
@@ -36,7 +32,6 @@ func NewClient(c Config) *Client {
 
 	conn, _, err := websocket.DefaultDialer.Dial(c.Url, nil)
 	if err != nil {
-		conn.Close()
 		return &Client{
 			Error: err,
 		}
@@ -62,14 +57,20 @@ func (c *Client) ReceiveMessage() {
 	c.lastMessageType, c.lastMessage = messageType, message
 }
 
-func (c *Client) Close() {
-	c.connect.Close()
-}
-
 func (c *Client) GetLastMessage() []byte {
 	return c.lastMessage
 }
 
 func (c *Client) GetLastMessageType() int {
 	return c.lastMessageType
+}
+
+func (c *Client) Close() {
+	c.connect.Close()
+}
+
+func (c *Client) listen() {
+	for {
+		c.ReceiveMessage()
+	}
 }
