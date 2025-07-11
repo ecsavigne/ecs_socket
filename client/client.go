@@ -69,7 +69,7 @@ func (c *Client) Close() {
 	c.connect.Close()
 }
 
-func (c *Client) listen() {
+func (c *Client) Listen() {
 	for {
 		c.ReceiveMessage()
 	}
