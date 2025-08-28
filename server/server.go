@@ -74,7 +74,7 @@ func (s *Server) Close() {
 	s.connect.Close()
 }
 
-// Funct Listen
+// Function Listen
 func (s *Server) Listen() {
 	for {
 		s.ReceiveMessage()
