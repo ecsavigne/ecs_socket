@@ -47,7 +47,7 @@ func (s *Server) setHandler(w http.ResponseWriter, r *http.Request) {
 	s.connect = conn
 }
 
-func (s *Server) SendMessage(data map[string]any) {
+func (s *Server) SendMessage(data any) {
 	msg, _ := json.Marshal(data)
 	s.Error = s.connect.WriteMessage(websocket.BinaryMessage, msg)
 }
