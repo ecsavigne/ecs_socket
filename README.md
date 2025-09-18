@@ -85,7 +85,7 @@ Library for send data way websocket
 
             const receive = (handlerCallback: (msg: string, err?: Error) => void) => {
                 callback = handlerCallback
-                _ws = new WebSocket('wss://servicex1.socialhub.pro/ws')
+                _ws = new WebSocket('wss://[server_path]/ws')
 
                 if (!_ws) { return }
 
