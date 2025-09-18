@@ -18,10 +18,9 @@ var clients map[*websocket.Conn]bool = make(map[*websocket.Conn]bool)
 
 type Server struct {
 	// Permite la conexión desde cualquier origen
-	countConections int
-	mutex           sync.RWMutex
-	upgrader        websocket.Upgrader
-	config          socket_type.SConfig
+	mutex    sync.RWMutex
+	upgrader websocket.Upgrader
+	config   socket_type.SConfig
 	// lastMessageType int
 	// lastMessage     []byte
 	// Error error
@@ -29,8 +28,7 @@ type Server struct {
 
 func NewServer(c socket_type.SConfig) *Server {
 	server := &Server{
-		countConections: 0,
-		config:          c,
+		config: c,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -50,7 +48,6 @@ func (s *Server) setHandler(w http.ResponseWriter, r *http.Request) *websocket.C
 	s.mutex.Lock()
 	clients[conn] = true
 	s.mutex.Unlock()
-	s.countConections++
 
 	return conn
 }
@@ -71,7 +68,6 @@ func (s *Server) SendMessage(data any) {
 			s.mutex.Lock()
 			s.Close(c)
 			delete(clients, c)
-			s.countConections--
 			s.mutex.Unlock()
 		}
 	}
@@ -86,7 +82,7 @@ func (s *Server) Close(c *websocket.Conn) {
 }
 
 func (s *Server) GetCountConections() int {
-	return s.countConections
+	return len(clients)
 }
 
 // Function Listen
@@ -99,7 +95,6 @@ func (s *Server) Listen() {
 		if e != nil {
 			s.mutex.Lock()
 			delete(clients, conn)
-			s.countConections--
 			s.mutex.Unlock()
 			break
 		}
