@@ -75,3 +75,65 @@ Library for send data way websocket
                 }
             }
         }
+
+
+        // Client typeScript
+
+        
+            const _ws = WebSocket|null
+            const callback = (msg: string, err?: Error) => void
+
+            const receive = (handlerCallback: (msg: string, err?: Error) => void) => {
+                callback = handlerCallback
+                _ws = new WebSocket('wss://servicex1.socialhub.pro/ws')
+
+                if (!_ws) { return }
+
+                _ws.onopen = () => console.log('Conected!')
+
+                // error
+                try {
+                _ws.onerror = (e) => {
+                    console.log(e)
+                    const target = e.target as WebSocket
+                    callback?.('', new Error(`readyState: ${target.readyState}, ws_url: ${target.url}`))
+                }
+                } catch (e) {
+                console.log(e)
+                }
+
+                // Receive msg
+                _ws.onmessage = async (msg: MessageEvent) => {
+                        let text: string
+
+                        if (typeof msg.data === 'string') {
+                            // caso más común: server manda texto/JSON
+                            text = msg.data
+                            console.log('parsed string:')
+                        } else if (msg.data instanceof Blob) {
+                            // caso server manda blob
+                            text = await msg.data.text()
+                            console.log('parsed blob:')
+                        } else if (msg.data instanceof ArrayBuffer) {
+                            // caso binario
+                            text = new TextDecoder().decode(msg.data)
+                            console.log('parsed ArrayBuffer:')
+                        } else {
+                            text = String(msg.data)
+                            console.log('parsed unknown:')
+                        }
+
+                        if (callback && text !== '') {
+                            callback(text)
+                        }
+                }
+            }
+
+
+            wsStore.receive((message, err) => {
+            if (err) {
+                console.log('Occurred an error in ws: ', err.message)
+            }
+
+            console.log('Process message:', message)
+            })
