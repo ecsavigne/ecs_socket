@@ -14,21 +14,64 @@ type Socker interface {
 	ReceiveMessage()
 }
 
-var clients map[*websocket.Conn]bool = make(map[*websocket.Conn]bool)
+type hub struct {
+	mutex   sync.RWMutex
+	clients map[*websocket.Conn]bool
+}
+
+func NewHub() *hub {
+	return &hub{
+		clients: make(map[*websocket.Conn]bool),
+	}
+}
+
+func (h *hub) add(conn *websocket.Conn) {
+	h.mutex.Lock()
+	h.clients[conn] = true
+	h.mutex.Unlock()
+}
+
+func (h *hub) remove(conn *websocket.Conn) {
+	h.mutex.Lock()
+	delete(h.clients, conn)
+	h.mutex.Unlock()
+}
+
+func (h *hub) Broadcast(data any) {
+	msg, _ := json.Marshal(data)
+
+	h.mutex.RLock()
+	conns := make([]*websocket.Conn, 0, len(h.clients))
+	for c := range h.clients {
+		conns = append(conns, c)
+	}
+	h.mutex.RUnlock()
+
+	for _, c := range conns {
+		if err := c.WriteMessage(websocket.TextMessage, msg); err != nil {
+			h.remove(c)
+			c.Close()
+		}
+	}
+}
+
+func (h *hub) Count() int {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+	return len(h.clients)
+}
 
 type Server struct {
 	// Permite la conexión desde cualquier origen
-	mutex    sync.RWMutex
+	hub      *hub
 	upgrader websocket.Upgrader
 	config   socket_type.SConfig
-	// lastMessageType int
-	// lastMessage     []byte
-	// Error error
 }
 
-func NewServer(c socket_type.SConfig) *Server {
+func NewServer(c socket_type.SConfig, h *hub) *Server {
 	server := &Server{
 		config: c,
+		hub:    h,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -44,58 +87,26 @@ func (s *Server) setHandler(w http.ResponseWriter, r *http.Request) *websocket.C
 		return nil
 	}
 
-	// Server connect
-	s.mutex.Lock()
-	clients[conn] = true
-	s.mutex.Unlock()
-
 	return conn
-}
-
-func (s *Server) SendMessage(data any) {
-	msg, _ := json.Marshal(data)
-
-	conns := make([]*websocket.Conn, 0, len(clients))
-	s.mutex.Lock()
-	for c := range clients {
-		conns = append(conns, c)
-	}
-	s.mutex.Unlock()
-
-	for _, c := range conns {
-		e := c.WriteMessage(websocket.BinaryMessage, msg)
-		if e != nil {
-			s.mutex.Lock()
-			s.Close(c)
-			delete(clients, c)
-			s.mutex.Unlock()
-		}
-	}
 }
 
 func (s *Server) ReceiveMessage(c *websocket.Conn) (messageType int, p []byte, err error) {
 	return c.ReadMessage()
 }
 
-func (s *Server) Close(c *websocket.Conn) {
-	c.Close()
-}
-
-func (s *Server) GetCountConections() int {
-	return len(clients)
-}
-
 // Function Listen
 func (s *Server) Listen() {
 	conn := s.setHandler(s.config.W, s.config.R)
-	defer s.Close(conn)
+
+	s.hub.add(conn)
+	defer func() {
+		s.hub.remove(conn)
+		conn.Close()
+	}()
 
 	for {
 		_, _, e := s.ReceiveMessage(conn)
 		if e != nil {
-			s.mutex.Lock()
-			delete(clients, conn)
-			s.mutex.Unlock()
 			break
 		}
 
