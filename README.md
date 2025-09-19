@@ -48,8 +48,7 @@ Library for send data way websocket
     }
 
 ### 4. Code client
-        // Client.go
-
+#### Client.go
         func main() {
             cl := client.NewClient(socket_type.CConfig{
                 Url: "exemplo.server.com/ws",
@@ -77,11 +76,38 @@ Library for send data way websocket
         }
 
 
-        // Client typeScript
-
-        
+#### Client typeScript
+ 			type Callback = (msg: string, err?: Error) => void
             const _ws = WebSocket|null
             const callback = (msg: string, err?: Error) => void
+			const retry = ref(0)
+
+   			 const send = (ws: WebSocket, cb: Callback) => {
+				ws.onmessage = async (msg: MessageEvent) => {
+				  	let text = ''
+	  
+					if (typeof msg.data === 'string') {
+						// caso más común: server manda texto/JSON
+						text = msg.data
+						console.log('parsed string:')
+					} else if (msg.data instanceof Blob) {
+						// caso server manda blob
+						text = await msg.data.text()
+						console.log('parsed blob:')
+					} else if (msg.data instanceof ArrayBuffer) {
+						// caso binario
+						text = new TextDecoder().decode(msg.data)
+						console.log('parsed ArrayBuffer:')
+					} else {
+						text = String(msg.data)
+						console.log('parsed unknown:')
+					}
+
+				  if (cb && text !== '') {
+					cb(text)
+				  }
+				}
+			  }
 
             const receive = (handlerCallback: (msg: string, err?: Error) => void) => {
                 callback = handlerCallback
@@ -94,41 +120,36 @@ Library for send data way websocket
                 // error
                 try {
                 _ws.onerror = (e) => {
-                    console.log(e)
-                    const target = e.target as WebSocket
-                    callback?.('', new Error(`readyState: ${target.readyState}, ws_url: ${target.url}`))
+					if (retry.value < 10) {
+			          retry.value++
+			          receive(callback.value)
+			        } else {
+					  console.log(e)
+					  const target = e.target as WebSocket
+					  callback?.('', new Error(`readyState: ${target.readyState}, ws_url: ${target.url}`))
+					}
                 }
                 } catch (e) {
-                console.log(e)
+                console.error(e)
                 }
 
-                // Receive msg
-                _ws.onmessage = async (msg: MessageEvent) => {
-                        let text: string
+                // Receive msg and send dat for callback
+				send(_ws.value, callback.value)
 
-                        if (typeof msg.data === 'string') {
-                            // caso más común: server manda texto/JSON
-                            text = msg.data
-                            console.log('parsed string:')
-                        } else if (msg.data instanceof Blob) {
-                            // caso server manda blob
-                            text = await msg.data.text()
-                            console.log('parsed blob:')
-                        } else if (msg.data instanceof ArrayBuffer) {
-                            // caso binario
-                            text = new TextDecoder().decode(msg.data)
-                            console.log('parsed ArrayBuffer:')
-                        } else {
-                            text = String(msg.data)
-                            console.log('parsed unknown:')
-                        }
-
-                        if (callback && text !== '') {
-                            callback(text)
-                        }
-                }
+				// handler retry of conections
+			   _ws.value.onclose = () => {
+			      callback.value?.('', new Error(`Disconnected!!!! ... Retry: ${retry.value}`))
+			
+			      console.log('Prepared Initial Set timeout')
+		 			// try each 3s reconnect 
+			      setTimeout(() => {
+			        console.log('Set timeout')
+			        retry.value++
+			        receive(callback.value)
+			      }, 3000)
+			      console.log('Prepared End Set timeout')
+			    }
             }
-
 
             wsStore.receive((message, err) => {
             if (err) {
