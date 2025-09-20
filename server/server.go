@@ -97,6 +97,9 @@ func (s *Server) ReceiveMessage(c *websocket.Conn) (messageType int, p []byte, e
 // Function Listen
 func (s *Server) Listen() {
 	conn := s.setHandler(s.config.W, s.config.R)
+	if conn == nil {
+		return
+	}
 
 	s.hub.add(conn)
 	defer func() {
