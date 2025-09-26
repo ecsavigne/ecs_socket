@@ -8,7 +8,7 @@ Library for send data way websocket
     2. Do it:
             go get -u github.com/ecsavigne/ecs_socket@<last-commit>
 ### 3. Code in server
-    // Eje. Gin file main.go
+####  // Eje. Gin file main.go send message to one client
 
     package main
 
@@ -30,7 +30,7 @@ Library for send data way websocket
           srv = server.NewServer(socket_type.SConfig{
                 W: g.Writer,
                 R: g.Request,
-            })
+            }, server.NewHub())
 
             srv.Listen()
         })
@@ -42,6 +42,47 @@ Library for send data way websocket
             }
 
             srv.SendMessage(msg)
+        })
+
+        router.Run(":8080")
+    }
+
+
+####  // Eje. Gin file main.go send message to broadcast client
+
+    package main
+
+    import (
+        "github.com/gin-gonic/gin"
+        "net/http"
+        "github.com/ecsavigne/ecs_socket/server"
+	    "github.com/ecsavigne/ecs_socket/socket_type"
+    )
+
+    var srv *server.Server
+    var hubGlobal  = server.NewHub()
+
+    func main() {
+        // Crear el router
+        router := gin.Default()
+
+        // Ruta GET simple
+        router.GET("/ws", func(c *gin.Context) {
+            srv := server.NewServer(socket_type.SConfig{
+                W: w,
+                R: r,
+            }, hubGlobal)
+
+            srv.Listen()
+        })
+
+        // Route send data for client
+        router.Get("receiveData", func(c *gin.Context){
+            msg := map[string]any{
+                "Data": "EveryThing",
+            }
+
+            hubGlobal.Broadcast(msg)
         })
 
         router.Run(":8080")
