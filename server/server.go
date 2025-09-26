@@ -19,6 +19,7 @@ type hub struct {
 	clients map[*websocket.Conn]bool
 }
 
+// NewHub returns a new hub for managing connections to the server
 func NewHub() *hub {
 	return &hub{
 		clients: make(map[*websocket.Conn]bool),
@@ -37,6 +38,9 @@ func (h *hub) remove(conn *websocket.Conn) {
 	h.mutex.Unlock()
 }
 
+// Broadcast sends a message to all connected clients.
+// If a client connection is broken, it will be removed from the hub.
+// The message is marshalled to JSON before being sent.
 func (h *hub) Broadcast(data any) {
 	msg, _ := json.Marshal(data)
 
@@ -94,12 +98,29 @@ func (s *Server) ReceiveMessage(c *websocket.Conn) (messageType int, p []byte, e
 	return c.ReadMessage()
 }
 
+// Send data to one client use when hub is not global if hub is global send to all clients with hub.Broadcast(msg)
+/*  example:
+/ 	srv = server.NewServer(socket_type.SConfig{
+		W: g.Writer,
+		R: g.Request,
+	},server.NewHub())
+ srv.Listen()
+ /* // Send data to one client
+  * srv.SendMessage(data any)
+  *
+ The message is marshalled to JSON before being sent.*/
+func (s *Server) SendMessage(data any) {
+	s.hub.Broadcast(data)
+}
+
 // Function Listen
 func (s *Server) Listen() {
 	conn := s.setHandler(s.config.W, s.config.R)
 	if conn == nil {
 		return
 	}
+
+	_ = conn
 
 	s.hub.add(conn)
 	defer func() {
