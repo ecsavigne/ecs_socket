@@ -118,6 +118,90 @@ Library for send data way websocket
 
 
 #### Client typeScript
+			// Con class 
+			
+			type Callback = (msg: string, err?: Error) => voi
+			interface WSInterface {
+			  send: (ws: WebSocket, cb: Callback) => void
+			  receive: (handlerCallback: Callback) => void
+			
+			}
+			
+			class ClientWebSocket {
+			  private _wsUrl = ''
+			  protected _ws = ref<WebSocket|null>(null)
+			  private callback = ref<Callback>((_ = '') => {
+			    // noop
+			  })
+			
+			  protected retry = ref(0)
+			
+			  constructor (wsUrl: string) {
+			    this._wsUrl = wsUrl
+			  }
+			
+			  // methods:
+			  send = (ws: WebSocket, cb: Callback) => {
+			    ws.onmessage = async (msg: MessageEvent) => {
+			      const text = await (msg.data).text()
+			
+			      if (cb && text !== '') {
+			        cb(text)
+			      }
+			    }
+			  }
+			
+			  receive = (handlerCallback: Callback) => {
+			    console.log('receive in Class WebSocket')
+			    this.callback.value = handlerCallback
+			    // this._ws.value = new WebSocket('wss://servicex1.socialhub.pro/ws')
+			    this._ws.value = new WebSocket(this._wsUrl)
+			
+			    if (!this._ws.value) { return }
+			
+			    this._ws.value.onopen = () => {
+			      console.log('Conected!')
+			      this.retry.value = 0
+			    }
+			
+			    // error
+			    try {
+			      this._ws.value.onerror = (e) => {
+			        if (this.retry.value < 10) {
+			          this.retry.value++
+			          this.receive(this.callback.value)
+			        } else {
+			          const target = e.target as WebSocket
+			          this.callback.value?.('', new Error(`readyState: ${target.readyState}, ws_url: ${target.url}, retry: ${this.retry.value}`))
+			        }
+			      }
+			    } catch (e) {
+			      console.error(e)
+			    }
+			
+			    // Receive msg
+			    this.send(this._ws.value, this.callback.value)
+			
+			    this._ws.value.onclose = () => {
+			      this.callback.value?.('', new Error(`Disconnected!!!! ... Retry: ${this.retry.value}`))
+			
+			      setTimeout(() => {
+			        console.log(`Connection retry: ${this.retry.value}`)
+			        this.retry.value++
+			        this.receive(this.callback.value)
+			      }, 3000)
+			    }
+			  }
+			}
+			
+			export {
+			  ClientWebSocket,
+			  type WSInterface
+			}
+
+			
+			Ó	
+
  			type Callback = (msg: string, err?: Error) => void
             const _ws = WebSocket|null
             const callback = (msg: string, err?: Error) => void
