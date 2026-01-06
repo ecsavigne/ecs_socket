@@ -120,41 +120,49 @@ Library for send data way websocket
 #### Client typeScript
 			// Con class 
 			
-			type Callback = (msg: string, err?: Error) => voi
-			interface WSInterface {
-			  send: (ws: WebSocket, cb: Callback) => void
-			  receive: (handlerCallback: Callback) => void
-			
+			import { ref } from 'vue'
+
+			interface OfficialEvent {
+			  event_name: string
+			  data: any
 			}
 			
-			class ClientWebSocket {
+			export type Callback = (msg: OfficialEvent | null, err?: Error) => void
+			
+			export interface WSInterface {
+			  receive: (handlerCallback: Callback) => void
+			  close: () => void // Añadido para cerrar explícitamente la conexión.
+			}
+			
+			export class ClientWebSocket implements WSInterface {
 			  private _wsUrl = ''
 			  protected _ws = ref<WebSocket|null>(null)
-			  private callback = ref<Callback>((_ = '') => {
+			  private callback = ref<Callback>((_ = {} as OfficialEvent) => {
 			    // noop
 			  })
 			
 			  protected retry = ref(0)
 			
-			  constructor (wsUrl: string) {
+			  public constructor (wsUrl: string) {
 			    this._wsUrl = wsUrl
 			  }
 			
 			  // methods:
-			  send = (ws: WebSocket, cb: Callback) => {
-			    ws.onmessage = async (msg: MessageEvent) => {
-			      const text = await (msg.data).text()
-			
-			      if (cb && text !== '') {
-			        cb(text)
+			  sendCallback = (ws: WebSocket, cb: Callback) => {
+			    ws.onmessage = (msg: MessageEvent) => {
+			      // console.log('Message receive: ', msg)
+			      const evtMsg = msg.data
+			      // console.log({ cb, evtMsg })
+			      if (cb && evtMsg) {
+			        cb(evtMsg)
+			      } else {
+			        console.log('No Envia a callback: ')
 			      }
 			    }
 			  }
 			
-			  receive = (handlerCallback: Callback) => {
-			    console.log('receive in Class WebSocket')
+			  public receive = (handlerCallback: Callback) => {
 			    this.callback.value = handlerCallback
-			    // this._ws.value = new WebSocket('wss://servicex1.socialhub.pro/ws')
 			    this._ws.value = new WebSocket(this._wsUrl)
 			
 			    if (!this._ws.value) { return }
@@ -172,18 +180,18 @@ Library for send data way websocket
 			          this.receive(this.callback.value)
 			        } else {
 			          const target = e.target as WebSocket
-			          this.callback.value?.('', new Error(`readyState: ${target.readyState}, ws_url: ${target.url}, retry: ${this.retry.value}`))
+			          this.callback.value?.(null, new Error(`readyState: ${target.readyState}, ws_url: ${target.url}, retry: ${this.retry.value}`))
 			        }
 			      }
 			    } catch (e) {
 			      console.error(e)
 			    }
 			
-			    // Receive msg
-			    this.send(this._ws.value, this.callback.value)
+			    // Send msg to callback
+			    this.sendCallback(this._ws.value, this.callback.value)
 			
 			    this._ws.value.onclose = () => {
-			      this.callback.value?.('', new Error(`Disconnected!!!! ... Retry: ${this.retry.value}`))
+			      this.callback.value?.(null, new Error(`Disconnected!!!! ... Retry: ${this.retry.value}`))
 			
 			      setTimeout(() => {
 			        console.log(`Connection retry: ${this.retry.value}`)
@@ -192,12 +200,13 @@ Library for send data way websocket
 			      }, 3000)
 			    }
 			  }
+			
+			  public close = () => {
+			    this._ws.value?.close()
+			  }
 			}
 			
-			export {
-			  ClientWebSocket,
-			  type WSInterface
-			}
+			export type { OfficialEvent }
 
 			
 			Ó	
