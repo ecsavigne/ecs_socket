@@ -118,7 +118,7 @@ Library for send data way websocket
 
 
 #### Client typeScript
-			// Con class 
+#### // Con class 
 			
 			import { ref } from 'vue'
 
@@ -209,7 +209,7 @@ Library for send data way websocket
 			export type { OfficialEvent }
 
 			
-			Ó	
+#### Ó	
 
  			type Callback = (msg: string, err?: Error) => void
             const _ws = WebSocket|null
