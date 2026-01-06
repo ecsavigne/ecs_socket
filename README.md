@@ -292,3 +292,36 @@ Library for send data way websocket
 
             console.log('Process message:', message)
             })
+#### use in TypeScript or JavaScript
+			// codigo dentro de un store	
+			import { ClientWebSocket, type WSInterface } from 'src/components/whatsapp/official/types/ws-class-type'
+			const clientNotice = ref<WSInterface>()
+			// code in a function init (ex: listener)
+				clientNotice.value = new ClientWebSocket('wss://oficial.crmsocialhub.com.br/wsNotice')
+
+			// initilize ws how you wish : useWsStore().listener()
+			// listener ws events : 
+				const ws = useWsStore()
+				const eventOfficial = ref({})
+
+				function initWS () {
+				  ws.clientNotice.receive((message, err) => {
+					// console.log('Message ws receive: ', message)
+					if (err) {
+					  console.log('Occurred an error in ws: ', err.message)
+					  return
+					}
+				
+					// const data = JSON.parse(message)
+					eventOfficial.value = JSON.parse(message)
+				  })
+				}
+					
+				onMounted(() => {
+				  initWS()
+				})
+
+				onUnmounted(() => {
+				  ws.clientWS.close()
+				})
+				
