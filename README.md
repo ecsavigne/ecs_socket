@@ -305,6 +305,7 @@ Library for send data way websocket
 				const eventOfficial = ref({})
 
 				function initWS () {
+				 // init, connect and receive from websocket
 				  ws.clientNotice.receive((message, err) => {
 					// console.log('Message ws receive: ', message)
 					if (err) {
