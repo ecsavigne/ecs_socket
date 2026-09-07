@@ -119,8 +119,6 @@ Library for send data way websocket
 
 #### Client typeScript
 #### // Con class 
-			
-			import { ref } from 'vue'
 
 			interface OfficialEvent {
 			  event_name: string
@@ -130,199 +128,258 @@ Library for send data way websocket
 			export type Callback = (msg: OfficialEvent | null, err?: Error) => void
 			
 			export interface WSInterface {
-			  receive: (handlerCallback: Callback) => void
+			  onReceive: (handlerCallback: Callback) => void
 			  close: () => void // Añadido para cerrar explícitamente la conexión.
 			}
 			
 			export class ClientWebSocket implements WSInterface {
-			  private _wsUrl = ''
-			  protected _ws = ref<WebSocket|null>(null)
-			  private callback = ref<Callback>((_ = {} as OfficialEvent) => {
-			    // noop
-			  })
+			  private readonly wsUrl: string
+			  private ws: WebSocket | null = null
+			  // eslint-disable-next-line @typescript-eslint/no-empty-function
+			  private callback: Callback = () => {}
 			
-			  protected retry = ref(0)
+			  private retry = 0
+			  private readonly maxRetries = 10
+			
+			  private reconnectTimer:
+			    | ReturnType<typeof setTimeout>
+			    | null = null
+			
+			  private manuallyClosed = false
 			
 			  public constructor (wsUrl: string) {
-			    this._wsUrl = wsUrl
+			    this.wsUrl = wsUrl
 			  }
 			
-			  // methods:
-			  sendCallback = (ws: WebSocket, cb: Callback) => {
-			    ws.onmessage = (msg: MessageEvent) => {
-			      // console.log('Message receive: ', msg)
-			      const evtMsg = msg.data
-			      // console.log({ cb, evtMsg })
-			      if (cb && evtMsg) {
-			        cb(evtMsg)
-			      } else {
-			        console.log('No Envia a callback: ')
+			  public onReceive (handlerCallback: Callback): void {
+			    this.callback = handlerCallback
+			    this.manuallyClosed = false
+			    this.connect()
+			  }
+			
+			  private connect (): void {
+			    if (
+			      this.ws?.readyState === WebSocket.OPEN ||
+			      this.ws?.readyState === WebSocket.CONNECTING
+			    ) {
+			      return
+			    }
+			
+			    const socket = new WebSocket(this.wsUrl)
+			    this.ws = socket
+			
+			    socket.onopen = () => {
+			      console.log('WebSocket connected')
+			      this.retry = 0
+			    }
+			
+			    socket.onmessage = (event: MessageEvent) => {
+			      let message: OfficialEvent = {} as OfficialEvent
+			      try {
+			        console.log('Message WebSocket:', event.data)
+			        message =
+			          typeof event.data === 'string'
+			            ? (JSON.parse(event.data) as OfficialEvent)
+			            : (event.data as OfficialEvent)
+			      } catch (error) {
+			        this.callback(
+			          null,
+			          error instanceof Error
+			            ? error
+			            : new Error('Message WebSocket invalid')
+			        )
+			      }
+			
+			      try {
+			        this.callback(message)
+			      } catch (error) {
+			        console.error('Error processing message in callback:', error)
+			        this.callback(
+			          null,
+			          error instanceof Error
+			            ? error
+			            : new Error('Message WebSocket invalid')
+			        )
 			      }
 			    }
-			  }
 			
-			  public receive = (handlerCallback: Callback) => {
-			    this.callback.value = handlerCallback
-			    this._ws.value = new WebSocket(this._wsUrl)
-			
-			    if (!this._ws.value) { return }
-			
-			    this._ws.value.onopen = () => {
-			      console.log('Conected!')
-			      this.retry.value = 0
+			    socket.onerror = (event) => {
+			      console.error('WebSocket error:', event)
 			    }
 			
-			    // error
-			    try {
-			      this._ws.value.onerror = (e) => {
-			        if (this.retry.value < 10) {
-			          this.retry.value++
-			          this.receive(this.callback.value)
-			        } else {
-			          const target = e.target as WebSocket
-			          this.callback.value?.(null, new Error(`readyState: ${target.readyState}, ws_url: ${target.url}, retry: ${this.retry.value}`))
-			        }
+			    socket.onclose = (event) => {
+			      if (this.ws !== socket) {
+			        return
 			      }
-			    } catch (e) {
-			      console.error(e)
-			    }
 			
-			    // Send msg to callback
-			    this.sendCallback(this._ws.value, this.callback.value)
+			      this.ws = null
 			
-			    this._ws.value.onclose = () => {
-			      this.callback.value?.(null, new Error(`Disconnected!!!! ... Retry: ${this.retry.value}`))
+			      console.warn('WebSocket cerrado:', {
+			        code: event.code,
+			        reason: event.reason,
+			        wasClean: event.wasClean
+			      })
 			
-			      setTimeout(() => {
-			        console.log(`Connection retry: ${this.retry.value}`)
-			        this.retry.value++
-			        this.receive(this.callback.value)
-			      }, 3000)
+			      if (this.manuallyClosed) {
+			        return
+			      }
+			
+			      this.callback(
+			        null,
+			        new Error(
+			          `WebSocket desconectado: ${event.code}`
+			        )
+			      )
+			
+			      this.scheduleReconnect()
 			    }
 			  }
 			
-			  public close = () => {
-			    this._ws.value?.close()
+			  private scheduleReconnect (): void {
+			    if (this.reconnectTimer) {
+			      return
+			    }
+			
+			    if (this.retry >= this.maxRetries) {
+			      this.callback(
+			        null,
+			        new Error(
+			          `Máximo de ${this.maxRetries} reintentos alcanzado`
+			        )
+			      )
+			
+			      return
+			    }
+			
+			    const delay = Math.min(
+			      1000 * 2 ** this.retry,
+			      30_000
+			    )
+			
+			    this.retry += 1
+			
+			    console.log(
+			      `Reconexión ${this.retry}/${this.maxRetries} en ${delay} ms`
+			    )
+			
+			    this.reconnectTimer = setTimeout(() => {
+			      this.reconnectTimer = null
+			      this.connect()
+			    }, delay)
+			  }
+			
+			  public close (): void {
+			    this.manuallyClosed = true
+			
+			    if (this.reconnectTimer) {
+			      clearTimeout(this.reconnectTimer)
+			      this.reconnectTimer = null
+			    }
+			
+			    const socket = this.ws
+			    this.ws = null
+			
+			    if (socket) {
+			      socket.onclose = null
+			      socket.close(1000, 'Cierre solicitado')
+			    }
 			  }
 			}
-			
+
 			export type { OfficialEvent }
 
-			
-#### Ó	
 
- 			type Callback = (msg: string, err?: Error) => void
-            const _ws = WebSocket|null
-            const callback = (msg: string, err?: Error) => void
-			const retry = ref(0)
+// Pattern singleton use store
+	import { markRaw, ref, shallowRef } from 'vue'
+		import { defineStore } from 'pinia'
+		import { ClientWebSocket, type WSInterface } from 'src/components/whatsapp/official/types/ws-class-type'
+		
+		export const useWsStore = defineStore('ws-store', () => {
+		  // state
+		  const clientWS = ref<WSInterface>()
+		  const clientNotice = shallowRef<WSInterface>()
+		  // getters
+		
+		  // actions
+		
+		  const isInitialized = ref(false)
+		
+		  function init (): void {
+		    if (isInitialized.value) {
+		      return
+		    }
+		
+		    clientWS.value = markRaw(
+		      new ClientWebSocket(
+		        'wss://servicex1.socialhub.pro/ws'
+		      )
+		    )
+		
+		    clientNotice.value = markRaw(
+		      new ClientWebSocket(
+		        'wss://oficial.crmsocialhub.com.br/wsNotice'
+		      )
+		    )
+		
+		    isInitialized.value = true
+		  }
+		
+		  function closeNotice (): void {
+		    clientNotice.value?.close()
+		    clientNotice.value = undefined
+		    isInitialized.value = false
+		  }
+		
+		  function closeWS (): void {
+		    clientNotice.value?.close()
+		    clientNotice.value = undefined
+		    isInitialized.value = false
+		  }
+		
+		  function closeAll (): void {
+		    clientWS.value?.close()
+		    clientNotice.value?.close()
+		
+		    clientWS.value = undefined
+		    clientNotice.value = undefined
+		    isInitialized.value = false
+		  }
+		
+		  return {
+		    // state
+		
+		    // getters
+		
+		    // actions
+		    clientWS,
+		    clientNotice,
+		    init,
+		    closeNotice,
+		    closeWS,
+		    closeAll
+		  }
+		})
 
-   			 const send = (ws: WebSocket, cb: Callback) => {
-				ws.onmessage = async (msg: MessageEvent) => {
-				  	let text = ''
-	  
-					if (typeof msg.data === 'string') {
-						// caso más común: server manda texto/JSON
-						text = msg.data
-						console.log('parsed string:')
-					} else if (msg.data instanceof Blob) {
-						// caso server manda blob
-						text = await msg.data.text()
-						console.log('parsed blob:')
-					} else if (msg.data instanceof ArrayBuffer) {
-						// caso binario
-						text = new TextDecoder().decode(msg.data)
-						console.log('parsed ArrayBuffer:')
-					} else {
-						text = String(msg.data)
-						console.log('parsed unknown:')
-					}
+// Use client
+// Init Globally client Websocket
+		import { useWsStore } from 'src/stores/store-ws'
+		import { onMounted, onUnmounted } from 'vue'
+		const wsStore = useWsStore()
+		onMounted(() => {
+		  wsStore.init()
+		})
+		
+		onUnmounted(() => {
+		  wsStore.closeNotice()
+		  wsStore.closeWS()
+		})
 
-				  if (cb && text !== '') {
-					cb(text)
-				  }
-				}
-			  }
+// Listen message
+	ws.clientNotice.onReceive((message, err) => {
+    if (err) {
+      console.log('Occurred an error in ws: PageConversationsWhatsapp', err.message)
+      return
+    }
 
-            const receive = (handlerCallback: (msg: string, err?: Error) => void) => {
-                callback = handlerCallback
-                _ws = new WebSocket('wss://[server_path]/ws')
-
-                if (!_ws) { return }
-
-                _ws.onopen = () => console.log('Conected!')
-
-                // error
-                try {
-                _ws.onerror = (e) => {
-					if (retry.value < 10) {
-			          retry.value++
-			          receive(callback.value)
-			        } else {
-					  console.log(e)
-					  const target = e.target as WebSocket
-					  callback?.('', new Error(`readyState: ${target.readyState}, ws_url: ${target.url}`))
-					}
-                }
-                } catch (e) {
-                console.error(e)
-                }
-
-                // Receive msg and send dat for callback
-				send(_ws.value, callback.value)
-
-				// handler retry of conections
-			   _ws.value.onclose = () => {
-			      callback.value?.('', new Error(`Disconnected!!!! ... Retry: ${retry.value}`))
-			
-			      console.log('Prepared Initial Set timeout')
-		 			// try each 3s reconnect 
-			      setTimeout(() => {
-			        console.log('Set timeout')
-			        retry.value++
-			        receive(callback.value)
-			      }, 3000)
-			      console.log('Prepared End Set timeout')
-			    }
-            }
-
-            wsStore.receive((message, err) => {
-            if (err) {
-                console.log('Occurred an error in ws: ', err.message)
-            }
-
-            console.log('Process message:', message)
-            })
-#### use in TypeScript or JavaScript
-			// codigo dentro de un store	
-			import { ClientWebSocket, type WSInterface } from 'src/components/whatsapp/official/types/ws-class-type'
-			const clientNotice = ref<WSInterface>()
-			// code in a function init (ex: listener)
-				clientNotice.value = new ClientWebSocket('wss://oficial.crmsocialhub.com.br/wsNotice')
-
-			// initilize ws how you wish : useWsStore().listener()
-			// listener ws events : 
-				const ws = useWsStore()
-				const eventOfficial = ref({})
-
-				function initWS () {
-				 // init, connect and receive from websocket
-				  ws.clientNotice.receive((message, err) => {
-					// console.log('Message ws receive: ', message)
-					if (err) {
-					  console.log('Occurred an error in ws: ', err.message)
-					  return
-					}
-				
-					// const data = JSON.parse(message)
-					eventOfficial.value = JSON.parse(message)
-				  })
-				}
-					
-				onMounted(() => {
-				  initWS()
-				})
-
-				onUnmounted(() => {
-				  ws.clientWS.close()
-				})
-				
+    eventOfficial.value = message
+  })
