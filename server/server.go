@@ -5,56 +5,97 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/dracory/uid"
 	"github.com/ecsavigne/ecs_socket/socket_type"
 	"github.com/gorilla/websocket"
 )
+
+type tuple map[string]any
 
 type Socker interface {
 	SendMessage(msg string)
 	ReceiveMessage()
 }
 
+type connClient struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+}
+
+func (self *connClient) send(data []byte) error {
+	self.writeMu.Lock()
+	defer self.writeMu.Unlock()
+
+	return self.conn.WriteMessage(websocket.TextMessage, data)
+}
+
 type hub struct {
 	mutex   sync.RWMutex
-	clients map[*websocket.Conn]bool
+	clients map[string]*connClient
+	// clients map[*connClient]bool
 }
 
 // NewHub returns a new hub for managing connections to the server
 func NewHub() *hub {
 	return &hub{
-		clients: make(map[*websocket.Conn]bool),
+		clients: make(map[string]*connClient),
+		// clients: make(map[*websocket.Conn]bool),
 	}
 }
 
-func (h *hub) add(conn *websocket.Conn) {
+//	func (h *hub) add(conn *websocket.Conn) {
+//		h.mutex.Lock()
+//		defer h.mutex.Unlock()
+//		h.clients[conn] = true
+//	}
+func (h *hub) add(conn *websocket.Conn, key ...string) (*connClient, string) {
+	c := &connClient{conn: conn}
 	h.mutex.Lock()
-	h.clients[conn] = true
-	h.mutex.Unlock()
+	defer h.mutex.Unlock()
+
+	k := uid.UuidV7(true)
+	if len(key) > 0 {
+		k = key[0]
+	}
+
+	h.clients[k] = c
+
+	return c, k
 }
 
-func (h *hub) remove(conn *websocket.Conn) {
+//	func (h *hub) remove(conn *websocket.Conn) {
+//		h.mutex.Lock()
+//		defer h.mutex.Unlock()
+//		delete(h.clients, conn)
+//	}
+func (h *hub) remove(key string) {
 	h.mutex.Lock()
-	delete(h.clients, conn)
-	h.mutex.Unlock()
+	defer h.mutex.Unlock()
+	delete(h.clients, key)
 }
 
 // Broadcast sends a message to all connected clients.
 // If a client connection is broken, it will be removed from the hub.
 // The message is marshalled to JSON before being sent.
 func (h *hub) Broadcast(data any) {
-	msg, _ := json.Marshal(data)
+	msg, e := json.Marshal(data)
+	if e != nil {
+		return
+	}
 
 	h.mutex.RLock()
-	conns := make([]*websocket.Conn, 0, len(h.clients))
-	for c := range h.clients {
-		conns = append(conns, c)
+	conns := make([]tuple, 0, len(h.clients))
+	for key, c := range h.clients {
+		conns = append(conns, tuple{"conn": c, "key": key})
 	}
 	h.mutex.RUnlock()
 
-	for _, c := range conns {
-		if err := c.WriteMessage(websocket.TextMessage, msg); err != nil {
-			h.remove(c)
-			c.Close()
+	for _, t := range conns {
+		c := t["conn"].(*connClient)
+		key := t["key"].(string)
+		if err := c.send(msg); err != nil {
+			h.remove(key)
+			c.conn.Close()
 		}
 	}
 }
@@ -113,19 +154,20 @@ func (s *Server) SendMessage(data any) {
 	s.hub.Broadcast(data)
 }
 
-// Function Listen
-func (s *Server) Listen() {
+/*
+Create one conection, add to the hub of server and listen for send messages
+*/
+func (s *Server) Listen(key ...string) {
 	conn := s.setHandler(s.config.W, s.config.R)
 	if conn == nil {
 		return
 	}
+	defer conn.Close()
 
-	_ = conn
-
-	s.hub.add(conn)
+	connCl, k := s.hub.add(conn, key...)
 	defer func() {
-		s.hub.remove(conn)
-		conn.Close()
+		s.hub.remove(k)
+		connCl.conn.Close()
 	}()
 
 	for {
